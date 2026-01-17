@@ -7789,14 +7789,14 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
         // 情绪参数映射（绝对值，emotion固定传neutral保持声线一致）
         // 注意：MiniMax的pitch必须是整数！
         const EMOTION_PARAMS = {
-            happy:     { speed: 1.1,  pitch: 1,  vol: 6 },
-            sad:       { speed: 0.9,  pitch: -1, vol: 4 },
-            angry:     { speed: 1.12, pitch: 1,  vol: 7 },
-            fearful:   { speed: 1.1,  pitch: 2,  vol: 5 },
-            surprised: { speed: 1.05, pitch: 2,  vol: 7 },
-            neutral:   { speed: 1.0,  pitch: 0,  vol: 5 },
-            tender:    { speed: 0.95, pitch: 0,  vol: 4 },
-            playful:   { speed: 1.1,  pitch: 1,  vol: 6 }
+            happy:     { speed: 1.1,  pitch: 1,  vol: 5 },
+            sad:       { speed: 0.95,  pitch: -1, vol: 3 },
+            angry:     { speed: 1.12, pitch: 1,  vol: 6 },
+            fearful:   { speed: 1.1,  pitch: 1,  vol: 4 },
+            surprised: { speed: 1.05, pitch: 1,  vol: 6 },
+            neutral:   { speed: 1.0,  pitch: 0,  vol: 4 },
+            tender:    { speed: 0.98, pitch: 0,  vol: 3 },
+            playful:   { speed: 1.1,  pitch: 1,  vol: 5 }
         };
 
         // 获取情绪参数（直接返回绝对值）

@@ -4006,7 +4006,7 @@
         </div>
         <input type="file" id="fileInput" style="display:none" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.md,.py,.js,.html,.css,.json" onchange="handleFileSelect(event)">
         <input type="file" id="imageInput" style="display:none" multiple accept="image/*" onchange="handleFileSelect(event)">
-        <input type="file" id="cameraInput" style="display:none" accept="image/*" capture="environment" onchange="handleFileSelect(event)">
+        <input type="file" id="cameraInput" style="display:none" accept="image/*" capture onchange="handleFileSelect(event)">
 
         <!-- 图片预览弹窗 -->
         <div class="image-preview-modal" id="imagePreviewModal" onclick="hideImagePreview()">
@@ -7664,29 +7664,8 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
         // 用户语音输入相关
         let voiceRecognition = null;
         let voiceInputText = '';
-
-        // 预请求麦克风权限（在页面首次加载或用户首次交互时调用）
-        async function requestMicrophonePermission() {
-            try {
-                // 尝试使用 Permissions API 检查权限状态
-                if (navigator.permissions && navigator.permissions.query) {
-                    const result = await navigator.permissions.query({ name: 'microphone' });
-                    if (result.state === 'granted') {
-                        console.log('麦克风权限已授予');
-                        return true;
-                    }
-                }
-                // 如果Permissions API不可用或权限未授予，尝试请求
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                // 立即停止流，我们只是为了获取权限
-                stream.getTracks().forEach(track => track.stop());
-                console.log('麦克风权限请求成功');
-                return true;
-            } catch (err) {
-                console.log('麦克风权限请求失败:', err.message);
-                return false;
-            }
-        }
+        let voiceProcessedCount = 0;  // 已处理的识别结果数量
+        let voiceUserEdited = false;  // 用户是否手动编辑过
 
         function startWechatVoiceInput() {
             closeWechatPlusPanel();
@@ -7698,24 +7677,16 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 return;
             }
 
-            // 先检查麦克风权限
-            requestMicrophonePermission().then(granted => {
-                if (!granted) {
-                    // 仍然尝试启动，让Speech API自己请求权限
-                    console.log('预请求权限失败，但仍尝试启动语音识别');
-                }
-                initVoiceRecognition(SpeechRecognition);
-            });
-        }
-
-        function initVoiceRecognition(SpeechRecognition) {
             // 初始化语音识别
             voiceRecognition = new SpeechRecognition();
             voiceRecognition.lang = 'zh-CN';
             voiceRecognition.continuous = true;
             voiceRecognition.interimResults = true;
 
+            // 重置状态
             voiceInputText = '';
+            voiceProcessedCount = 0;
+            voiceUserEdited = false;
             document.getElementById('voiceInputPreview').value = '';
             document.getElementById('voiceInputText').textContent = '正在聆听...';
             document.getElementById('voiceInputIndicator').classList.remove('error');
@@ -7723,49 +7694,81 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
             document.getElementById('voiceInputModal').classList.add('show');
 
             voiceRecognition.onresult = (event) => {
-                let finalText = '';
+                // 如果用户正在编辑，不覆盖
+                if (voiceUserEdited) {
+                    // 只处理新的final结果，追加到用户编辑的内容后
+                    let newFinalText = '';
+                    for (let i = voiceProcessedCount; i < event.results.length; i++) {
+                        const result = event.results[i];
+                        if (result.isFinal) {
+                            let text = result[0].transcript;
+                            text = addChinesePunctuation(text);
+                            newFinalText += text;
+                            voiceProcessedCount = i + 1;
+                        }
+                    }
+                    if (newFinalText) {
+                        const preview = document.getElementById('voiceInputPreview');
+                        preview.value = preview.value + newFinalText;
+                        document.getElementById('voiceInputSendBtn').disabled = !preview.value.trim();
+                    }
+                    return;
+                }
+
+                // 正常模式：收集所有结果
+                let finalParts = [];
                 let interimText = '';
 
                 for (let i = 0; i < event.results.length; i++) {
                     const result = event.results[i];
                     if (result.isFinal) {
-                        finalText += result[0].transcript;
+                        // 对每个final结果单独添加标点
+                        let text = result[0].transcript;
+                        text = addChinesePunctuation(text);
+                        finalParts.push(text);
+                        voiceProcessedCount = i + 1;
                     } else {
                         interimText += result[0].transcript;
                     }
                 }
 
-                // 为最终识别结果添加标点
-                if (finalText) {
-                    finalText = addChinesePunctuation(finalText);
-                }
-
+                const finalText = finalParts.join('');
                 voiceInputText = finalText;
-                const displayText = finalText + (interimText ? '...' + interimText : '');
+                const displayText = finalText + (interimText ? interimText : '');
                 document.getElementById('voiceInputPreview').value = displayText;
-                document.getElementById('voiceInputSendBtn').disabled = !finalText.trim();
+                document.getElementById('voiceInputSendBtn').disabled = !finalText.trim() && !interimText.trim();
             };
 
             voiceRecognition.onerror = (event) => {
                 console.error('语音识别错误:', event.error);
+                // 不要因为aborted就显示错误，可能是正常停止
+                if (event.error === 'aborted') {
+                    return;
+                }
                 document.getElementById('voiceInputIndicator').classList.add('error');
                 if (event.error === 'no-speech') {
-                    document.getElementById('voiceInputText').textContent = '没有检测到语音';
+                    document.getElementById('voiceInputText').textContent = '没有检测到语音，请说话';
                 } else if (event.error === 'not-allowed') {
                     document.getElementById('voiceInputText').textContent = '请允许麦克风权限';
                 } else {
-                    document.getElementById('voiceInputText').textContent = '识别出错，请重试';
+                    document.getElementById('voiceInputText').textContent = '识别出错: ' + event.error;
                 }
             };
 
             voiceRecognition.onend = () => {
-                // 如果有内容且未发送，保持弹窗
-                if (!voiceInputText.trim()) {
-                    document.getElementById('voiceInputText').textContent = '聆听结束';
+                // 识别结束，检查是否需要重启
+                const preview = document.getElementById('voiceInputPreview');
+                if (document.getElementById('voiceInputModal').classList.contains('show') && !preview.value.trim()) {
+                    document.getElementById('voiceInputText').textContent = '聆听已停止，点击下方重新开始';
                 }
             };
 
-            voiceRecognition.start();
+            try {
+                voiceRecognition.start();
+            } catch (e) {
+                console.error('启动语音识别失败:', e);
+                document.getElementById('voiceInputText').textContent = '启动失败，请重试';
+            }
         }
 
         function cancelVoiceInput() {
@@ -7811,6 +7814,7 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
 
         // 用户手动编辑语音预览文本时的处理
         function onVoicePreviewEdit() {
+            voiceUserEdited = true;  // 标记用户已手动编辑
             const text = document.getElementById('voiceInputPreview').value.trim();
             document.getElementById('voiceInputSendBtn').disabled = !text;
             voiceInputText = text;

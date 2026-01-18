@@ -7204,13 +7204,10 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 // 如果开启了时间感知增强，添加额外说明
                 if (timeAwareEnhanceEnabled) {
                     systemPart += `
-你还会看到对话中的时间间隔标记（如"[—— 约3小时后 ——]"）。
+在对话记录中会有一个时间间隔提示，告诉你距离上次对话过了多久以及当前时间。
 像一个真正生活在用户身边的人一样，自然地感知时间流逝。
-- 时间过了多久、现在大概是什么时候，这些信息可以自然融入你的回复
-- 根据时间间隔和上下文，灵活判断：是接着之前的话题、还是开启新话题、还是调侃一下时间
-- 不需要每次都提时间，但当时间信息能让对话更自然时，可以用上
-- 像真人一样：有时候会说"这么久才回来"，有时候直接接着聊，有时候会关心"忙完了？"
-总之，让时间成为你理解语境的一部分，而不是机械地处理。`;
+- 根据时间间隔和上下文，灵活判断：是接着之前的话题、还是开启新话题、还是关心一下对方
+- 不需要每次都提时间，但当时间信息能让对话更自然时，可以用上`;
                 }
             }
 
@@ -7271,34 +7268,57 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
             const timeGapEnabled = timeAwareEnhanceEnabled;
             const timeGapThreshold = timeGapThresholds[timeAwareIntensity] || timeGapThresholds.medium;
 
-            // 格式化时间间隔为可读文本
-            function formatTimeGap(ms) {
-                const hours = ms / (60 * 60 * 1000);
-                const days = hours / 24;
-                if (days >= 2) return '隔了好几天';
-                if (days >= 1) return '隔了一天';
-                if (hours >= 8) return '隔了小半天';
-                if (hours >= 4) return '大半天后';
-                if (hours >= 2) return '约3小时后';
-                return '约1小时后';
-            }
+            // 计算最后一次对话的时间间隔（只计算一次，用于最后插入）
+            let lastTimeGapInfo = null;
+            if (timeGapEnabled && history.length > 0) {
+                // 找到最后一条助手消息的时间
+                let lastAssistantTime = null;
+                for (let i = history.length - 1; i >= 0; i--) {
+                    if (history[i].role === 'assistant' && history[i].timestamp) {
+                        lastAssistantTime = typeof history[i].timestamp === 'number'
+                            ? history[i].timestamp
+                            : new Date(history[i].timestamp).getTime();
+                        break;
+                    }
+                }
 
-            let prevTimestamp = null;
+                // 如果有助手消息，计算到现在的时间间隔
+                if (lastAssistantTime) {
+                    const now = new Date();
+                    const gap = now.getTime() - lastAssistantTime;
+                    if (gap >= timeGapThreshold) {
+                        const hours = gap / (60 * 60 * 1000);
+                        const days = Math.floor(hours / 24);
+
+                        // 格式化间隔文本
+                        let gapText;
+                        if (days >= 2) {
+                            gapText = `已过了${days}天`;
+                        } else if (days >= 1) {
+                            gapText = '已过了一天';
+                        } else if (hours >= 6) {
+                            gapText = '约半天';
+                        } else if (hours >= 3) {
+                            gapText = '约' + Math.round(hours) + '小时';
+                        } else {
+                            gapText = '约' + Math.round(hours) + '小时';
+                        }
+
+                        // 格式化当前时间（如果跨天则显示日期）
+                        let timeText;
+                        if (days >= 1) {
+                            timeText = `${now.getMonth()+1}月${now.getDate()}日 ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+                        } else {
+                            timeText = `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+                        }
+
+                        lastTimeGapInfo = `[距离上次对话${gapText}，当前时间${timeText}]`;
+                    }
+                }
+            }
 
             history.forEach((msg, idx) => {
                 try {
-                    // 时间间隔标记插入
-                    if (timeGapEnabled && msg.timestamp) {
-                        const msgTime = typeof msg.timestamp === 'number' ? msg.timestamp : new Date(msg.timestamp).getTime();
-                        if (prevTimestamp && !isNaN(msgTime) && !isNaN(prevTimestamp)) {
-                            const gap = msgTime - prevTimestamp;
-                            if (gap >= timeGapThreshold) {
-                                fullContent += `\n[—— ${formatTimeGap(gap)} ——]\n\n`;
-                            }
-                        }
-                        prevTimestamp = msgTime;
-                    }
-
                     const speaker = msg.role === 'user' ? '用户' : assistantName;
                     let content = msg.content;
 
@@ -7379,6 +7399,11 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 const skippedCount = totalImageCount - images.length;
                 fullContent = fullContent.replace('=====对话记录=====\n',
                     `=====对话记录=====\n[注：历史中共有${totalImageCount}张图片，为节省空间只保留最近${images.length}张，其余${skippedCount}张用文字标记]\n`);
+            }
+
+            // 在对话记录末尾插入时间间隔提示（只有一个，清晰明了）
+            if (lastTimeGapInfo) {
+                fullContent += `\n${lastTimeGapInfo}\n`;
             }
 
             fullContent += '=====\n';

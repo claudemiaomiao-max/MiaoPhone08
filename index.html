@@ -3887,12 +3887,16 @@
                         <input type="number" class="wechat-settings-input" id="wechatMemoryCount" value="20" min="1" max="100">
                     </div>
                     <div class="wechat-settings-item">
-                        <span class="wechat-settings-label">时间感知强度</span>
+                        <span class="wechat-settings-label">时间感知</span>
+                        <div class="switch on" id="wechatTimeAware" onclick="this.classList.toggle('on'); updateTimeAwareEnhanceVisibility()"></div>
+                    </div>
+                    <div class="wechat-settings-item" id="wechatTimeAwareEnhanceItem">
+                        <span class="wechat-settings-label">时间感知增强</span>
                         <select class="wechat-settings-select" id="wechatTimeAwareIntensity">
                             <option value="off">关</option>
-                            <option value="light">轻度 (≥1小时)</option>
+                            <option value="light">轻度 (≥6小时)</option>
                             <option value="medium" selected>中度 (≥3小时)</option>
-                            <option value="strong">强化 (≥6小时)</option>
+                            <option value="strong">强化 (≥1小时)</option>
                         </select>
                     </div>
                     <div class="wechat-settings-item">
@@ -6482,6 +6486,38 @@
                 `;
             }
 
+            // 转账收款/拒收通知消息
+            if (msg.type === 'transfer_receipt') {
+                const isAccepted = msg.action === 'accepted';
+                const isFromUser = msg.role === 'user';
+                const actionText = isAccepted ? '已收款' : '已退还';
+                const icon = isAccepted ? '💚' : '💔';
+                const statusClass = isAccepted ? 'accepted' : 'declined';
+                const displayTime = typeof msg.timestamp === 'number'
+                    ? formatTime(new Date(msg.timestamp).toISOString())
+                    : formatTime(msg.timestamp);
+
+                return `
+                    <div class="wechat-msg ${isFromUser ? 'user' : 'assistant'}${selectedClass}" ${bubbleClass} data-msg-id="${msg.id}">
+                        ${selectCheckbox}
+                        <div class="wechat-msg-avatar">
+                            ${isFromUser
+                                ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+                                : (assistant?.avatar ? `<img src="${assistant.avatar}" alt="">` : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>')
+                            }
+                        </div>
+                        <div class="wechat-msg-body">
+                            <div class="wechat-transfer-card ${statusClass}">
+                                <div class="wechat-transfer-title">${icon} ${actionText}</div>
+                                <div class="wechat-transfer-amount">¥${msg.amount?.toFixed(2) || '0.00'}</div>
+                                <div class="wechat-transfer-status">${isAccepted ? '已存入余额' : '已退回对方'}</div>
+                            </div>
+                            <div class="wechat-msg-time">${displayTime}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
             if (msg.type === 'voice_message') {
                 const duration = Math.max(1, Math.ceil((msg.content || '').length / 4));
                 // 根据秒数决定长度样式
@@ -6761,6 +6797,20 @@
             const msg = conv.messages.find(m => m.id === currentTransferMsgId);
             if (msg) {
                 msg.status = 'accepted';
+
+                // 添加收款通知到待发送队列，随用户下次消息一起发给AI
+                const receiptMsg = {
+                    id: 'receipt_' + Date.now(),
+                    role: 'user',
+                    type: 'transfer_receipt',
+                    action: 'accepted',
+                    originalTransferId: msg.id,
+                    amount: msg.amount,
+                    senderName: msg.senderName,
+                    timestamp: Date.now()
+                };
+                wechatData.pendingMessages.push(receiptMsg);
+
                 saveWechatData();
                 renderWechatMessages();
             }
@@ -6777,6 +6827,20 @@
             const msg = conv.messages.find(m => m.id === currentTransferMsgId);
             if (msg) {
                 msg.status = 'declined';
+
+                // 添加拒收通知到待发送队列，随用户下次消息一起发给AI
+                const receiptMsg = {
+                    id: 'receipt_' + Date.now(),
+                    role: 'user',
+                    type: 'transfer_receipt',
+                    action: 'declined',
+                    originalTransferId: msg.id,
+                    amount: msg.amount,
+                    senderName: msg.senderName,
+                    timestamp: Date.now()
+                };
+                wechatData.pendingMessages.push(receiptMsg);
+
                 saveWechatData();
                 renderWechatMessages();
             }
@@ -7059,7 +7123,10 @@
    - 使用场景：调侃、撒娇、引起注意、亲昵互动时
 2. 转账：{"type":"transfer","amount":数字,"note":"可选备注"}
    - 使用场景：发红包、给零花钱、庆祝、关心时
-3. 引用回复：{"type":"text","content":"你的回复","quote":{"senderName":"对方名字","content":"被引用的内容"}}
+3. 收款/拒收：{"type":"transfer_receipt","action":"accepted或declined","amount":金额,"originalSender":"转账发送者"}
+   - 使用场景：当用户给你转账后，你需要选择收取或拒绝
+   - 如果用户给你转账了，你应该在回复中明确表态（收或拒）
+4. 引用回复：{"type":"text","content":"你的回复","quote":{"senderName":"对方名字","content":"被引用的内容"}}
    - 使用场景：回应用户之前说的某句话、强调某个观点时`;
             } else {
                 // 普通模式：可以混合文字和语音
@@ -7111,26 +7178,40 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
 2. 转账：{"type":"transfer","amount":数字,"note":"可选备注"}
    - 使用场景：发红包、给零花钱、庆祝、关心时（如"给你买杯奶茶"）
    - 金额建议：小额为主(1-200)，符合日常互动
-3. 引用回复：{"type":"text","content":"你的回复","quote":{"senderName":"对方名字","content":"被引用的内容"}}
+3. 收款/拒收：{"type":"transfer_receipt","action":"accepted或declined","amount":金额,"originalSender":"转账发送者"}
+   - 使用场景：当用户给你转账后，你需要选择收取或拒绝
+   - accepted表示开心收下，declined表示婉拒退回
+   - 如果用户给你转账了，你应该在回复中明确表态（收或拒），不要忽略
+4. 引用回复：{"type":"text","content":"你的回复","quote":{"senderName":"对方名字","content":"被引用的内容"}}
    - 使用场景：回应用户之前说的某句话、强调某个观点时
 
 直接输出JSON数组，不要加任何解释。`;
             }
 
-            // 时间感知增强
+            // 时间感知（总开关）：让助手能看到时间戳
+            const timeAwareEnabled = settings.timeAware !== false; // 默认开启
+            // 时间感知增强：添加时间间隔标记
             const timeAwareIntensity = settings.timeAwareIntensity || 'medium';
-            if (timeAwareIntensity !== 'off') {
+            const timeAwareEnhanceEnabled = timeAwareEnabled && timeAwareIntensity !== 'off';
+
+            if (timeAwareEnabled) {
                 const now = new Date();
                 const timeStr = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
                 systemPart += `\n\n【时间感知】
 当前时间: ${timeStr}
-你能看到每条消息的时间戳和对话中的时间间隔标记（如"[—— 约3小时后 ——]"）。
+你能看到每条消息的时间戳。`;
+
+                // 如果开启了时间感知增强，添加额外说明
+                if (timeAwareEnhanceEnabled) {
+                    systemPart += `
+你还会看到对话中的时间间隔标记（如"[—— 约3小时后 ——]"）。
 像一个真正生活在用户身边的人一样，自然地感知时间流逝。
 - 时间过了多久、现在大概是什么时候，这些信息可以自然融入你的回复
 - 根据时间间隔和上下文，灵活判断：是接着之前的话题、还是开启新话题、还是调侃一下时间
 - 不需要每次都提时间，但当时间信息能让对话更自然时，可以用上
 - 像真人一样：有时候会说"这么久才回来"，有时候直接接着聊，有时候会关心"忙完了？"
 总之，让时间成为你理解语境的一部分，而不是机械地处理。`;
+                }
             }
 
             fullContent += systemPart + '\n\n';
@@ -7180,13 +7261,14 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
 
             console.log(`图片收集: 最后助手消息位置=${lastAssistantIdx}, 新图片数=${newImageIndices.length}, 将发送=${validImageIndices.size}张`);
 
-            // 时间间隔检测配置
+            // 时间间隔检测配置（阈值越小=提示越频繁=强度越高）
             const timeGapThresholds = {
-                light: 1 * 60 * 60 * 1000,    // 1小时
-                medium: 3 * 60 * 60 * 1000,   // 3小时
-                strong: 6 * 60 * 60 * 1000    // 6小时
+                light: 6 * 60 * 60 * 1000,    // 6小时 - 轻度
+                medium: 3 * 60 * 60 * 1000,   // 3小时 - 中度
+                strong: 1 * 60 * 60 * 1000    // 1小时 - 强化
             };
-            const timeGapEnabled = timeAwareIntensity !== 'off';
+            // 时间间隔标记只在时间感知和时间感知增强都开启时生效
+            const timeGapEnabled = timeAwareEnhanceEnabled;
             const timeGapThreshold = timeGapThresholds[timeAwareIntensity] || timeGapThresholds.medium;
 
             // 格式化时间间隔为可读文本
@@ -7231,6 +7313,14 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                         const receiver = msg.receiverName || (msg.role === 'user' ? assistantName : '用户');
                         const statusText = msg.status === 'received' || msg.status === 'accepted' ? '已领取' : '待领取';
                         fullContent += `[转账] ${sender} 向 ${receiver} 转账 ¥${msg.amount}${msg.note ? '，备注: ' + msg.note : ''}（${statusText}）\n`;
+                        return;
+                    }
+                    // 转账收款/拒收通知
+                    if (msg.type === 'transfer_receipt') {
+                        const actor = msg.role === 'user' ? '用户' : assistantName;
+                        const actionText = msg.action === 'accepted' ? '收取了' : '拒绝了';
+                        const from = msg.senderName || '对方';
+                        fullContent += `[收款通知] ${actor}${actionText}来自${from}的¥${msg.amount}转账\n`;
                         return;
                     }
 
@@ -7492,6 +7582,32 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                             timestamp: new Date().toISOString()
                         };
                     }
+                    // 处理助手对用户转账的收款/拒收
+                    else if (reply.type === 'transfer_receipt') {
+                        const action = reply.action || 'accepted';
+                        const amount = reply.amount || 0;
+
+                        // 找到用户发送的待处理转账并更新状态
+                        const userPendingTransfer = conv.messages.find(m =>
+                            m.type === 'transfer' &&
+                            m.role === 'user' &&
+                            m.status === 'pending'
+                        );
+                        if (userPendingTransfer) {
+                            userPendingTransfer.status = action;
+                        }
+
+                        // 创建AI的收款通知消息
+                        msgToAdd = {
+                            id: 'receipt_' + Date.now() + '_' + index,
+                            role: 'assistant',
+                            type: 'transfer_receipt',
+                            action: action,
+                            amount: userPendingTransfer?.amount || amount,
+                            senderName: '用户',
+                            timestamp: new Date().toISOString()
+                        };
+                    }
                     // 普通消息（text/voice_message）
                     else {
                         msgToAdd = {
@@ -7549,6 +7665,29 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
         let voiceRecognition = null;
         let voiceInputText = '';
 
+        // 预请求麦克风权限（在页面首次加载或用户首次交互时调用）
+        async function requestMicrophonePermission() {
+            try {
+                // 尝试使用 Permissions API 检查权限状态
+                if (navigator.permissions && navigator.permissions.query) {
+                    const result = await navigator.permissions.query({ name: 'microphone' });
+                    if (result.state === 'granted') {
+                        console.log('麦克风权限已授予');
+                        return true;
+                    }
+                }
+                // 如果Permissions API不可用或权限未授予，尝试请求
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // 立即停止流，我们只是为了获取权限
+                stream.getTracks().forEach(track => track.stop());
+                console.log('麦克风权限请求成功');
+                return true;
+            } catch (err) {
+                console.log('麦克风权限请求失败:', err.message);
+                return false;
+            }
+        }
+
         function startWechatVoiceInput() {
             closeWechatPlusPanel();
 
@@ -7559,6 +7698,17 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 return;
             }
 
+            // 先检查麦克风权限
+            requestMicrophonePermission().then(granted => {
+                if (!granted) {
+                    // 仍然尝试启动，让Speech API自己请求权限
+                    console.log('预请求权限失败，但仍尝试启动语音识别');
+                }
+                initVoiceRecognition(SpeechRecognition);
+            });
+        }
+
+        function initVoiceRecognition(SpeechRecognition) {
             // 初始化语音识别
             voiceRecognition = new SpeechRecognition();
             voiceRecognition.lang = 'zh-CN';
@@ -7789,14 +7939,14 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
         // 情绪参数映射（绝对值，emotion固定传neutral保持声线一致）
         // 注意：MiniMax的pitch必须是整数！
         const EMOTION_PARAMS = {
-            happy:     { speed: 1.1,  pitch: 1,  vol: 5 },
-            sad:       { speed: 0.95,  pitch: -1, vol: 3 },
-            angry:     { speed: 1.12, pitch: 1,  vol: 6 },
-            fearful:   { speed: 1.1,  pitch: 1,  vol: 4 },
-            surprised: { speed: 1.05, pitch: 1,  vol: 6 },
-            neutral:   { speed: 1.0,  pitch: 0,  vol: 4 },
-            tender:    { speed: 0.98, pitch: 0,  vol: 3 },
-            playful:   { speed: 1.1,  pitch: 1,  vol: 5 }
+            happy:     { speed: 1.1,  pitch: 1,  vol: 6 },
+            sad:       { speed: 0.9,  pitch: -1, vol: 4 },
+            angry:     { speed: 1.12, pitch: 1,  vol: 7 },
+            fearful:   { speed: 1.1,  pitch: 2,  vol: 5 },
+            surprised: { speed: 1.05, pitch: 2,  vol: 7 },
+            neutral:   { speed: 1.0,  pitch: 0,  vol: 5 },
+            tender:    { speed: 0.95, pitch: 0,  vol: 4 },
+            playful:   { speed: 1.1,  pitch: 1,  vol: 6 }
         };
 
         // 获取情绪参数（直接返回绝对值）
@@ -8349,6 +8499,8 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 contentPreview = '[语音]';
             } else if (msg.type === 'transfer') {
                 contentPreview = `[转账] ¥${msg.amount}`;
+            } else if (msg.type === 'transfer_receipt') {
+                contentPreview = msg.action === 'accepted' ? `[已收款] ¥${msg.amount}` : `[已退还] ¥${msg.amount}`;
             } else if (msg.type === 'pat_message') {
                 contentPreview = msg.content;
             } else {
@@ -8703,6 +8855,8 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                     content = `[语音] ${content}`;
                 } else if (msg.type === 'transfer') {
                     content = `[转账 ¥${msg.amount}]`;
+                } else if (msg.type === 'transfer_receipt') {
+                    content = msg.action === 'accepted' ? `[收款 ¥${msg.amount}]` : `[拒收 ¥${msg.amount}]`;
                 } else if (msg.type === 'pat_message') {
                     content = `[${content}]`;
                 }
@@ -8905,12 +9059,13 @@ ${chatContext}
             document.getElementById('wechatMsgCount').textContent = messages.length + ' 条';
 
             document.getElementById('wechatMemoryCount').value = settings.memoryCount || 20;
-            // 兼容旧数据：如果有timeAware布尔值，转换为新格式
-            let intensityValue = settings.timeAwareIntensity || 'medium';
-            if (settings.timeAware === false && !settings.timeAwareIntensity) {
-                intensityValue = 'off';
-            }
-            document.getElementById('wechatTimeAwareIntensity').value = intensityValue;
+            // 时间感知总开关（默认开启）
+            const timeAwareOn = settings.timeAware !== false;
+            document.getElementById('wechatTimeAware').classList.toggle('on', timeAwareOn);
+            // 时间感知增强选项
+            document.getElementById('wechatTimeAwareIntensity').value = settings.timeAwareIntensity || 'medium';
+            // 根据总开关状态显示/隐藏增强选项
+            updateTimeAwareEnhanceVisibility();
             document.getElementById('wechatVoiceMode').classList.toggle('on', settings.voiceMode || false);
             document.getElementById('wechatTtsEnabled').classList.toggle('on', settings.ttsEnabled || false);
             document.getElementById('wechatVoiceId').value = settings.voiceId || '';
@@ -8921,10 +9076,10 @@ ${chatContext}
         function saveWechatChatSettings() {
             const conv = wechatData.conversations[wechatData.currentAssistantId];
             if (conv) {
-                const intensityValue = document.getElementById('wechatTimeAwareIntensity').value;
                 conv.settings = {
                     memoryCount: parseInt(document.getElementById('wechatMemoryCount').value) || 20,
-                    timeAwareIntensity: intensityValue,
+                    timeAware: document.getElementById('wechatTimeAware').classList.contains('on'),
+                    timeAwareIntensity: document.getElementById('wechatTimeAwareIntensity').value,
                     voiceMode: document.getElementById('wechatVoiceMode').classList.contains('on'),
                     ttsEnabled: document.getElementById('wechatTtsEnabled').classList.contains('on'),
                     voiceId: document.getElementById('wechatVoiceId').value.trim()
@@ -8932,6 +9087,16 @@ ${chatContext}
                 saveWechatData();
             }
             closePage('wechatSettingsPage');
+        }
+
+        // 根据时间感知总开关状态，控制时间感知增强选项的显示
+        function updateTimeAwareEnhanceVisibility() {
+            const timeAwareOn = document.getElementById('wechatTimeAware').classList.contains('on');
+            const enhanceItem = document.getElementById('wechatTimeAwareEnhanceItem');
+            if (enhanceItem) {
+                enhanceItem.style.opacity = timeAwareOn ? '1' : '0.5';
+                enhanceItem.style.pointerEvents = timeAwareOn ? 'auto' : 'none';
+            }
         }
 
         function exportWechatChat() {

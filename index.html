@@ -9308,6 +9308,33 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 return;
             }
 
+            // 只显示已导入微信模式的助手（或已有日记的助手）
+            const diaryAssistants = appData.assistants.filter(a =>
+                wechatData.importedAssistants?.includes(a.id) ||
+                (diaryData.diaries[a.id] && diaryData.diaries[a.id].entries?.length > 0)
+            );
+
+            if (!diaryAssistants.length) {
+                dropdown.innerHTML = '<div style="padding: 16px; text-align: center; color: #999;">请先在微信模式导入助手</div>';
+                return;
+            }
+
+            dropdown.innerHTML = diaryAssistants.map(a => {
+                const diaryInfo = diaryData.diaries[a.id] || { entries: [] };
+                const count = diaryInfo.entries?.length || 0;
+                const isSelected = a.id === diaryData.currentAssistantId;
+                return `
+                    <div class="diary-assistant-dropdown-item${isSelected ? ' selected' : ''}" onclick="selectDiaryAssistant('${a.id}')">
+                        <div class="diary-assistant-dropdown-avatar">
+                            ${a.avatar ? `<img src="${a.avatar}" alt="">` : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'}
+                        </div>
+                        <span class="diary-assistant-dropdown-name">${escapeHtml(a.name)}</span>
+                        <span class="diary-assistant-dropdown-count">${count}篇</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
         // 切换助手下拉菜单
         function toggleDiaryAssistantDropdown() {
             const dropdown = document.getElementById('diaryAssistantDropdown');

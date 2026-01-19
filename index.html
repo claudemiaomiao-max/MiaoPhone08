@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MiaomiaoPhone</title>
+    <title>妙妙的聊天小窝</title>
     <!-- 移动端调试工具 eruda，点击右下角齿轮图标可打开控制台 -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
@@ -3459,34 +3459,48 @@
             background: #c9a8b8;
             color: #fff;
         }
-        /* 有聊天记录的日期 - 浅色小圆点 */
-        .diary-calendar-day.has-chat::before {
+        /* 有聊天记录的日期 - 浅色背景色块 */
+        .diary-calendar-day.has-chat {
+            background: rgba(212,197,185,0.4);
+        }
+        /* 连续聊天日期的色块融合 */
+        .diary-calendar-day.has-chat.chat-continue-left {
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+        }
+        .diary-calendar-day.has-chat.chat-continue-right {
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+        /* 填充连续日期之间的间隙 */
+        .diary-calendar-day.has-chat.chat-continue-right::before {
             content: '';
             position: absolute;
-            bottom: 4px;
-            left: calc(50% - 6px);
+            right: -4px;
+            top: 0;
             width: 4px;
-            height: 4px;
-            border-radius: 50%;
-            background: #d4c5b9;
+            height: 100%;
+            background: rgba(212,197,185,0.4);
+            z-index: -1;
         }
-        /* 有日记的日期 - 深色小圆点 */
+        /* 选中时覆盖背景色 */
+        .diary-calendar-day.selected.has-chat {
+            background: #c9a8b8;
+        }
+        .diary-calendar-day.selected.has-chat.chat-continue-right::before {
+            background: #c9a8b8;
+        }
+        /* 有日记的日期 - 深色小圆点（底部） */
         .diary-calendar-day.has-diary::after {
             content: '';
             position: absolute;
-            bottom: 4px;
-            left: calc(50% + 2px);
-            width: 4px;
-            height: 4px;
+            bottom: 3px;
+            left: calc(50% - 3px);
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
             background: #a8879a;
         }
-        /* 只有一个圆点时居中 */
-        .diary-calendar-day.has-chat:not(.has-diary)::before,
-        .diary-calendar-day.has-diary:not(.has-chat)::after {
-            left: calc(50% - 2px);
-        }
-        .diary-calendar-day.selected.has-chat::before,
         .diary-calendar-day.selected.has-diary::after {
             background: rgba(255,255,255,0.8);
         }
@@ -3560,6 +3574,38 @@
             background: rgba(255,255,255,0.9);
             padding: 4px 10px;
             border-radius: 12px;
+            z-index: 10;
+        }
+        /* PC端日记导航箭头 */
+        .diary-nav-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 40px;
+            height: 60px;
+            border: none;
+            background: rgba(168,135,154,0.8);
+            color: #fff;
+            font-size: 28px;
+            cursor: pointer;
+            z-index: 10;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .diary-nav-arrow:hover {
+            background: rgba(168,135,154,1);
+        }
+        .diary-nav-prev {
+            left: 8px;
+        }
+        .diary-nav-next {
+            right: 8px;
+        }
+        /* 移动端隐藏箭头 */
+        @media (max-width: 768px) {
+            .diary-nav-arrow {
+                display: none !important;
+            }
         }
         /* 日记详情滑动提示区域 */
         .diary-swipe-hint {
@@ -4311,9 +4357,6 @@
                 </div>
             </div>
 
-            <button class="diary-generate-btn" onclick="generateDiaryNow()" title="现在写一篇日记">
-                ✏️
-            </button>
         </div>
 
         <!-- 日记模式 - 日记详情页（支持滑动切换） -->
@@ -4330,6 +4373,9 @@
             <div class="page-content diary-detail-wrapper">
                 <!-- 页码指示器（多篇时显示） -->
                 <div class="diary-page-indicator" id="diaryPageIndicator" style="display: none;"></div>
+                <!-- PC端导航箭头 -->
+                <button class="diary-nav-arrow diary-nav-prev" id="diaryNavPrev" onclick="diaryDetailPrev()" style="display: none;">‹</button>
+                <button class="diary-nav-arrow diary-nav-next" id="diaryNavNext" onclick="diaryDetailNext()" style="display: none;">›</button>
                 <!-- 滑动容器 -->
                 <div class="diary-detail-slider" id="diaryDetailSlider">
                     <!-- 日记内容动态生成 -->
@@ -8155,6 +8201,21 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
             }
             voiceInputText = '';
             document.getElementById('voiceInputModal').classList.remove('show');
+            // 重置音频路由（修复语音识别后TTS外放问题）
+            resetAudioRoute();
+        }
+
+        // 重置音频路由（播放静音音频来恢复音频会话）
+        function resetAudioRoute() {
+            try {
+                const silentAudio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+                silentAudio.volume = 0.01;
+                silentAudio.play().then(() => {
+                    console.log('音频路由已重置');
+                }).catch(() => {});
+            } catch (e) {
+                console.warn('重置音频路由失败:', e);
+            }
         }
 
         function sendVoiceInput() {
@@ -8167,6 +8228,9 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 voiceRecognition.stop();
                 voiceRecognition = null;
             }
+
+            // 重置音频路由（修复语音识别后TTS外放问题）
+            resetAudioRoute();
 
             // 创建用户语音消息
             const voiceMsg = {
@@ -8320,14 +8384,14 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
         // 情绪参数映射（绝对值，emotion固定传neutral保持声线一致）
         // 注意：MiniMax的pitch必须是整数！
         const EMOTION_PARAMS = {
-            happy:     { speed: 1.1,  pitch: 1,  vol: 6 },
-            sad:       { speed: 0.9,  pitch: -1, vol: 4 },
-            angry:     { speed: 1.12, pitch: 1,  vol: 7 },
-            fearful:   { speed: 1.1,  pitch: 2,  vol: 5 },
-            surprised: { speed: 1.05, pitch: 2,  vol: 7 },
-            neutral:   { speed: 1.0,  pitch: 0,  vol: 5 },
-            tender:    { speed: 0.95, pitch: 0,  vol: 4 },
-            playful:   { speed: 1.1,  pitch: 1,  vol: 6 }
+            happy:     { speed: 1.1,  pitch: 1,  vol: 5 },
+            sad:       { speed: 0.95,  pitch: -1, vol: 3 },
+            angry:     { speed: 1.12, pitch: 1,  vol: 6 },
+            fearful:   { speed: 1.1,  pitch: 1,  vol: 4 },
+            surprised: { speed: 1.05, pitch: 1,  vol: 6 },
+            neutral:   { speed: 1.0,  pitch: 0,  vol: 4 },
+            tender:    { speed: 0.98, pitch: 0,  vol: 3 },
+            playful:   { speed: 1.1,  pitch: 1,  vol: 5 }
         };
 
         // 获取情绪参数（直接返回绝对值）
@@ -8886,7 +8950,9 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
             if (msg.type === 'image') {
                 contentPreview = '[图片]';
             } else if (msg.type === 'voice_message') {
-                contentPreview = '[语音]';
+                // 语音消息显示实际内容
+                const voiceContent = msg.content?.substring(0, 50) || '';
+                contentPreview = '[语音] ' + voiceContent + (msg.content?.length > 50 ? '...' : '');
             } else if (msg.type === 'transfer') {
                 contentPreview = `[转账] ¥${msg.amount}`;
             } else if (msg.type === 'transfer_receipt') {
@@ -9014,7 +9080,9 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
         }
 
         // 打开日记模式
-        function openDiaryMode() {
+        async function openDiaryMode() {
+            // 确保wechatData已加载（用于获取聊天记录日期）
+            await initWechatData();
             loadDiaryData();
 
             // 默认选择第一个助手
@@ -9166,10 +9234,23 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 const isSelected = diarySelectedDate === dateStr;
                 const isFuture = dateObj > today;
 
+                // 检查前后日期是否也有聊天（用于色块融合）
+                const prevDay = new Date(diaryCalendarYear, diaryCalendarMonth, day - 1);
+                const nextDay = new Date(diaryCalendarYear, diaryCalendarMonth, day + 1);
+                const prevDateStr = `${prevDay.getFullYear()}-${prevDay.getMonth()}-${prevDay.getDate()}`;
+                const nextDateStr = `${nextDay.getFullYear()}-${nextDay.getMonth()}-${nextDay.getDate()}`;
+                const hasPrevChat = chatDates.has(prevDateStr);
+                const hasNextChat = chatDates.has(nextDateStr);
+
                 let classes = 'diary-calendar-day';
                 if (isToday) classes += ' today';
                 if (hasDiary) classes += ' has-diary';
-                if (hasChat) classes += ' has-chat';
+                if (hasChat) {
+                    classes += ' has-chat';
+                    // 连续聊天日期色块融合
+                    if (hasPrevChat) classes += ' chat-continue-left';
+                    if (hasNextChat) classes += ' chat-continue-right';
+                }
                 if (isSelected) classes += ' selected';
                 if (isFuture) classes += ' future';
 
@@ -9210,27 +9291,11 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
         function selectDiaryDate(dateStr) {
             diarySelectedDate = dateStr;
             renderDiaryCalendar();
-
-            // 解析日期
-            const [year, month, day] = dateStr.split('-').map(Number);
-
-            // 查找当天的日记
-            const entries = diaryData.diaries[diaryData.currentAssistantId]?.entries || [];
-            const dayEntries = entries.filter(e => {
-                const d = new Date(e.date);
-                return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
-            });
-
-            if (dayEntries.length > 0) {
-                // 有日记，直接打开详情页
-                openDiaryDetailForDate(dateStr, dayEntries);
-            } else {
-                // 没有日记，显示生成选项
-                renderDiaryContentArea();
-            }
+            // 统一显示概览（不直接跳转详情页）
+            renderDiaryContentArea();
         }
 
-        // 渲染日记内容区域（无日记时显示）
+        // 渲染日记内容区域（显示概览和日记预览）
         function renderDiaryContentArea() {
             const container = document.getElementById('diaryContentArea');
 
@@ -9250,29 +9315,95 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
             const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
             const dateDisplay = `${year}年${month + 1}月${day}日 ${weekDays[selectedDateObj.getDay()]}`;
 
+            // 获取当前助手名称
+            const assistant = appData.assistants?.find(a => a.id === diaryData.currentAssistantId);
+            const assistantName = assistant?.name || '助手';
+
             // 检查是否有聊天记录
             const chatDates = getChatDatesForAssistant(diaryData.currentAssistantId);
             const hasChat = chatDates.has(diarySelectedDate);
 
+            // 查找当天的日记
+            const entries = diaryData.diaries[diaryData.currentAssistantId]?.entries || [];
+            const dayEntries = entries.filter(e => {
+                const d = new Date(e.date);
+                return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
+            });
+
+            // 生成日记预览HTML
+            let diaryPreviewsHtml = '';
+            if (dayEntries.length > 0) {
+                diaryPreviewsHtml = dayEntries.map((entry, idx) => {
+                    // 取前60个字符作为预览
+                    const preview = entry.content.substring(0, 60) + (entry.content.length > 60 ? '...' : '');
+                    return `
+                        <div onclick="openDiaryDetailForDateWithIndex('${diarySelectedDate}', ${idx})" style="
+                            background: #fff;
+                            border-radius: 12px;
+                            padding: 12px;
+                            margin-bottom: 10px;
+                            cursor: pointer;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                            transition: transform 0.2s;
+                        " onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+                            <div style="font-size: 12px; color: #a8879a; margin-bottom: 6px;">
+                                ${entry.weather || ''} 第${idx + 1}篇
+                            </div>
+                            <div style="font-size: 14px; color: #5a4a4a; line-height: 1.5;">
+                                ${escapeHtml(preview)}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
             container.innerHTML = `
-                <div class="diary-no-entry">
-                    <div class="diary-no-entry-icon">📝</div>
-                    <div style="font-weight: 500; color: #5a4a4a;">${dateDisplay}</div>
-                    <div style="font-size: 13px; margin-top: 8px; color: #999;">
-                        ${hasChat ? '这一天有聊天记录，可以生成日记' : '这一天没有聊天记录，但也可以生成日记'}
+                <div style="padding: 16px;">
+                    <div style="text-align: center; margin-bottom: 16px;">
+                        <div style="font-size: 16px; font-weight: 500; color: #5a4a4a;">${dateDisplay}</div>
+                        <div style="font-size: 13px; margin-top: 6px; color: #999;">
+                            ${hasChat ? `这一天有和${assistantName}对话` : `这一天没有和${assistantName}对话`}
+                        </div>
                     </div>
-                    <button onclick="generateDiaryForDate('${diarySelectedDate}')" style="
-                        margin-top: 16px;
-                        padding: 10px 24px;
-                        background: linear-gradient(135deg, #c9a8b8, #a8879a);
-                        border: none;
-                        border-radius: 20px;
-                        color: #fff;
-                        font-size: 14px;
-                        cursor: pointer;
-                    ">生成这一天的日记</button>
+                    ${dayEntries.length > 0 ? `
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 13px; color: #a8879a; margin-bottom: 8px;">已有 ${dayEntries.length} 篇日记</div>
+                            ${diaryPreviewsHtml}
+                        </div>
+                    ` : ''}
+                    <div style="text-align: center;">
+                        <button id="diaryGenerateBtn" onclick="generateDiaryForDate('${diarySelectedDate}')" style="
+                            padding: 10px 24px;
+                            background: linear-gradient(135deg, #c9a8b8, #a8879a);
+                            border: none;
+                            border-radius: 20px;
+                            color: #fff;
+                            font-size: 14px;
+                            cursor: pointer;
+                            transition: transform 0.1s, opacity 0.2s;
+                        " onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'" ontouchstart="this.style.transform='scale(0.95)'" ontouchend="this.style.transform='scale(1)'">${dayEntries.length > 0 ? '再写一篇' : '生成这一天的日记'}</button>
+                    </div>
                 </div>
             `;
+        }
+
+        // 打开指定日期的日记详情（指定索引）
+        function openDiaryDetailForDateWithIndex(dateStr, index) {
+            const [year, month, day] = dateStr.split('-').map(Number);
+            const entries = diaryData.diaries[diaryData.currentAssistantId]?.entries || [];
+            const dayEntries = entries.filter(e => {
+                const d = new Date(e.date);
+                return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
+            });
+            if (dayEntries.length > 0) {
+                openDiaryDetailForDate(dateStr, dayEntries);
+                // 跳转到指定索引
+                if (index > 0 && index < dayEntries.length) {
+                    diaryDetailCurrentIndex = index;
+                    diaryData.currentDiaryId = dayEntries[index].id;
+                    updateDiaryDetailSlider();
+                }
+            }
         }
 
         // 切换自动写日记
@@ -9317,12 +9448,7 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 return;
             }
 
-            // 显示loading
-            const btn = document.querySelector('.diary-generate-btn');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '⏳';
-            btn.disabled = true;
-
+            // 显示loading（浮动按钮已移除，此函数主要用于自动生成）
             try {
                 // 获取微信聊天记录作为上下文
                 const chatContext = getDiaryChatContext(assistantId);
@@ -9389,9 +9515,6 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
             } catch (e) {
                 console.error('生成日记失败:', e);
                 alert('生成日记失败: ' + e.message);
-            } finally {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
             }
         }
 
@@ -9440,7 +9563,7 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
         function getDiaryChatContextForDate(assistantId, dateStr) {
             const conv = wechatData.conversations?.[assistantId];
             if (!conv || !conv.messages || conv.messages.length === 0) {
-                return '（这一天没有和用户聊天）';
+                return '（完全没有和用户聊过天）';
             }
 
             // 解析目标日期
@@ -9458,12 +9581,75 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 return msgDate >= targetStart && msgDate <= targetEnd;
             });
 
-            if (dayMessages.length === 0) {
-                return '（这一天没有和用户聊天）';
+            // 如果当天有消息，直接返回当天的上下文
+            if (dayMessages.length > 0) {
+                let context = `这一天（${year}年${month + 1}月${day}日）和用户的聊天记录：\n\n`;
+                dayMessages.forEach(msg => {
+                    const speaker = msg.role === 'user' ? '用户' : assistantName;
+                    let content = msg.content || '';
+
+                    if (msg.type === 'image') {
+                        content = '[发送了一张图片]';
+                    } else if (msg.type === 'voice_message') {
+                        content = `[语音] ${content}`;
+                    } else if (msg.type === 'transfer') {
+                        content = `[转账 ¥${msg.amount}]`;
+                    } else if (msg.type === 'transfer_receipt') {
+                        content = msg.action === 'accepted' ? `[收款 ¥${msg.amount}]` : `[拒收 ¥${msg.amount}]`;
+                    } else if (msg.type === 'pat_message') {
+                        content = `[${content}]`;
+                    }
+
+                    // 过滤掉时间间隔标记
+                    content = content.replace(/\[距离上次对话[^\]]*\]/g, '').trim();
+
+                    if (content) {
+                        // 添加消息时间
+                        const msgDate = typeof msg.timestamp === 'number' ? new Date(msg.timestamp) : new Date(msg.timestamp);
+                        const timeStr = `${String(msgDate.getHours()).padStart(2, '0')}:${String(msgDate.getMinutes()).padStart(2, '0')}`;
+                        context += `[${timeStr}] ${speaker}: ${content}\n`;
+                    }
+                });
+                return context;
             }
 
-            let context = `这一天（${year}年${month + 1}月${day}日）和用户的聊天记录：\n\n`;
-            dayMessages.forEach(msg => {
+            // 当天没有消息，查找最近一天有聊天的日期
+            let lastChatDate = null;
+            let lastChatMessages = [];
+
+            // 遍历所有消息，找到目标日期之前最近的聊天日期
+            for (let i = conv.messages.length - 1; i >= 0; i--) {
+                const msg = conv.messages[i];
+                if (!msg.timestamp) continue;
+                const msgDate = typeof msg.timestamp === 'number' ? new Date(msg.timestamp) : new Date(msg.timestamp);
+
+                // 只考虑目标日期之前的消息
+                if (msgDate < targetStart) {
+                    if (!lastChatDate) {
+                        lastChatDate = new Date(msgDate.getFullYear(), msgDate.getMonth(), msgDate.getDate());
+                    }
+                    // 检查是否同一天
+                    const msgDay = new Date(msgDate.getFullYear(), msgDate.getMonth(), msgDate.getDate());
+                    if (msgDay.getTime() === lastChatDate.getTime()) {
+                        lastChatMessages.unshift(msg);
+                    } else {
+                        break; // 已经到了更早的一天，停止
+                    }
+                }
+            }
+
+            if (!lastChatDate || lastChatMessages.length === 0) {
+                return '（在这一天之前没有和用户聊过天）';
+            }
+
+            // 计算距离上次聊天多少天
+            const daysDiff = Math.floor((targetStart - lastChatDate) / (1000 * 60 * 60 * 24));
+            const lastChatDateStr = `${lastChatDate.getFullYear()}年${lastChatDate.getMonth() + 1}月${lastChatDate.getDate()}日`;
+
+            let context = `【注意】这一天（${year}年${month + 1}月${day}日）没有和用户聊天，已经${daysDiff}天没有联系了。\n`;
+            context += `以下是最近一次聊天（${lastChatDateStr}）的记录，供你参考：\n\n`;
+
+            lastChatMessages.forEach(msg => {
                 const speaker = msg.role === 'user' ? '用户' : assistantName;
                 let content = msg.content || '';
 
@@ -9483,7 +9669,6 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 content = content.replace(/\[距离上次对话[^\]]*\]/g, '').trim();
 
                 if (content) {
-                    // 添加消息时间
                     const msgDate = typeof msg.timestamp === 'number' ? new Date(msg.timestamp) : new Date(msg.timestamp);
                     const timeStr = `${String(msgDate.getHours()).padStart(2, '0')}:${String(msgDate.getMinutes()).padStart(2, '0')}`;
                     context += `[${timeStr}] ${speaker}: ${content}\n`;
@@ -9522,11 +9707,12 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
             const dateDisplay = `${year}年${month + 1}月${day}日 ${weekDays[targetDate.getDay()]}`;
 
             // 显示loading
-            const btn = document.querySelector('.diary-generate-btn');
+            const btn = document.getElementById('diaryGenerateBtn');
             const originalText = btn?.innerHTML;
             if (btn) {
-                btn.innerHTML = '⏳';
+                btn.innerHTML = '⏳ 生成中...';
                 btn.disabled = true;
+                btn.style.opacity = '0.7';
             }
 
             try {
@@ -9590,6 +9776,7 @@ type可以是"text"(文字)或"voice_message"(语音)，你自由选择。
                 if (btn) {
                     btn.innerHTML = originalText;
                     btn.disabled = false;
+                    btn.style.opacity = '1';
                 }
             }
         }
@@ -9738,11 +9925,20 @@ ${chatContext}
         function updateDiaryDetailSlider() {
             const slider = document.getElementById('diaryDetailSlider');
             const indicator = document.getElementById('diaryPageIndicator');
+            const prevBtn = document.getElementById('diaryNavPrev');
+            const nextBtn = document.getElementById('diaryNavNext');
 
             slider.style.transform = `translateX(-${diaryDetailCurrentIndex * 100}%)`;
 
             if (diaryDetailEntries.length > 1) {
                 indicator.textContent = `${diaryDetailCurrentIndex + 1}/${diaryDetailEntries.length}`;
+                // PC端显示导航箭头
+                prevBtn.style.display = diaryDetailCurrentIndex > 0 ? 'block' : 'none';
+                nextBtn.style.display = diaryDetailCurrentIndex < diaryDetailEntries.length - 1 ? 'block' : 'none';
+            } else {
+                // 只有一篇时隐藏所有导航
+                prevBtn.style.display = 'none';
+                nextBtn.style.display = 'none';
             }
 
             // 更新当前日记ID
@@ -9775,6 +9971,22 @@ ${chatContext}
             } else if (diff < -threshold && diaryDetailCurrentIndex > 0) {
                 // 向右滑，上一篇
                 diaryDetailCurrentIndex--;
+                updateDiaryDetailSlider();
+            }
+        }
+
+        // PC端上一篇
+        function diaryDetailPrev() {
+            if (diaryDetailCurrentIndex > 0) {
+                diaryDetailCurrentIndex--;
+                updateDiaryDetailSlider();
+            }
+        }
+
+        // PC端下一篇
+        function diaryDetailNext() {
+            if (diaryDetailCurrentIndex < diaryDetailEntries.length - 1) {
+                diaryDetailCurrentIndex++;
                 updateDiaryDetailSlider();
             }
         }
